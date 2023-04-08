@@ -26,7 +26,7 @@ from .segmentation import (DETRsegm, PostProcessPanoptic, PostProcessSegm,
                            dice_loss, sigmoid_focal_loss)
 from .deformable_transformer import build_deforamble_transformer
 import copy
-
+from .middle_adapter import FeatureFusionBlock
 
 def _get_clones(module, N):
     return nn.ModuleList([copy.deepcopy(module) for i in range(N)])
@@ -56,28 +56,31 @@ class DeformableDETR(nn.Module):
         self.num_feature_levels = num_feature_levels
         if not two_stage:
             self.query_embed = nn.Embedding(num_queries, hidden_dim*2)
-        if num_feature_levels > 1:
-            num_backbone_outs = len(backbone.strides)
-            input_proj_list = []
-            for _ in range(num_backbone_outs):
-                in_channels = backbone.num_channels[_]
-                input_proj_list.append(nn.Sequential(
-                    nn.Conv2d(in_channels, hidden_dim, kernel_size=1),
-                    nn.GroupNorm(32, hidden_dim),
-                ))
-            for _ in range(num_feature_levels - num_backbone_outs):
-                input_proj_list.append(nn.Sequential(
-                    nn.Conv2d(in_channels, hidden_dim, kernel_size=3, stride=2, padding=1),
-                    nn.GroupNorm(32, hidden_dim),
-                ))
-                in_channels = hidden_dim
-            self.input_proj = nn.ModuleList(input_proj_list)
-        else:
-            self.input_proj = nn.ModuleList([
-                nn.Sequential(
-                    nn.Conv2d(backbone.num_channels[0], hidden_dim, kernel_size=1),
-                    nn.GroupNorm(32, hidden_dim),
-                )])
+#        if num_feature_levels > 1:
+#            num_backbone_outs = len(backbone.strides)
+#            input_proj_list = []
+#            for _ in range(num_backbone_outs):
+#                in_channels = backbone.num_channels[_]
+#                input_proj_list.append(nn.Sequential(
+#                    nn.Conv2d(in_channels, hidden_dim, kernel_size=1),
+#                    nn.GroupNorm(32, hidden_dim),
+#                ))
+#            for _ in range(num_feature_levels - num_backbone_outs):
+#                input_proj_list.append(nn.Sequential(
+#                    nn.Conv2d(in_channels, hidden_dim, kernel_size=3, stride=2, padding=1),
+#                    nn.GroupNorm(32, hidden_dim),
+#                ))
+#                in_channels = hidden_dim
+#            self.input_proj = nn.ModuleList(input_proj_list)
+#        else:
+#            self.input_proj = nn.ModuleList([
+#                nn.Sequential(
+#                    nn.Conv2d(backbone.num_channels[0], hidden_dim, kernel_size=1),
+#                    nn.GroupNorm(32, hidden_dim),
+#                )])
+
+        self.feature_summary = FeatureFusionBlock(backbone, num_feature_levels)
+#       modify at here
         self.backbone = backbone
         self.aux_loss = aux_loss
         self.with_box_refine = with_box_refine
@@ -88,9 +91,9 @@ class DeformableDETR(nn.Module):
         self.class_embed.bias.data = torch.ones(num_classes) * bias_value
         nn.init.constant_(self.bbox_embed.layers[-1].weight.data, 0)
         nn.init.constant_(self.bbox_embed.layers[-1].bias.data, 0)
-        for proj in self.input_proj:
-            nn.init.xavier_uniform_(proj[0].weight, gain=1)
-            nn.init.constant_(proj[0].bias, 0)
+#        for proj in self.input_proj:
+#            nn.init.xavier_uniform_(proj[0].weight, gain=1)
+#            nn.init.constant_(proj[0].bias, 0)
 
         # if two-stage, the last class_embed and bbox_embed is for region proposal generation
         num_pred = (transformer.decoder.num_layers + 1) if two_stage else transformer.decoder.num_layers
@@ -128,33 +131,36 @@ class DeformableDETR(nn.Module):
         """
         if not isinstance(samples, NestedTensor):
             samples = nested_tensor_from_tensor_list(samples)
-        features, pos = self.backbone(samples)
-
-        srcs = []
-        masks = []
-        for l, feat in enumerate(features):
-            src, mask = feat.decompose()
-            srcs.append(self.input_proj[l](src))
-            masks.append(mask)
-            assert mask is not None
-        if self.num_feature_levels > len(srcs):
-            _len_srcs = len(srcs)
-            for l in range(_len_srcs, self.num_feature_levels):
-                if l == _len_srcs:
-                    src = self.input_proj[l](features[-1].tensors)
-                else:
-                    src = self.input_proj[l](srcs[-1])
-                m = samples.mask
-                mask = F.interpolate(m[None].float(), size=src.shape[-2:]).to(torch.bool)[0]
-                pos_l = self.backbone[1](NestedTensor(src, mask)).to(src.dtype)
-                srcs.append(src)
-                masks.append(mask)
-                pos.append(pos_l)
+        features, pos = self.backbone(samples) 
+        src = self.feature_summary(features)
+        mask = features[0].mask
+#        srcs = []
+#        masks = []
+#        # features project
+#        for l, feat in enumerate(features):
+#            src, mask = feat.decompose()
+#            srcs.append(self.input_proj[l](src))
+#            masks.append(mask)
+#            assert mask is not None
+#        # features increase
+#        if self.num_feature_levels > len(srcs):
+#            _len_srcs = len(srcs)
+#            for l in range(_len_srcs, self.num_feature_levels):
+#                if l == _len_srcs:
+#                    src = self.input_proj[l](features[-1].tensors)
+#                else:
+#                    src = self.input_proj[l](srcs[-1])
+#                m = samples.mask
+#                mask = F.interpolate(m[None].float(), size=src.shape[-2:]).to(torch.bool)[0]
+#                pos_l = self.backbone[1](NestedTensor(src, mask)).to(src.dtype)
+#                srcs.append(src)
+#                masks.append(mask)
+#                pos.append(pos_l)
 
         query_embeds = None
         if not self.two_stage:
             query_embeds = self.query_embed.weight
-        hs, init_reference, inter_references, enc_outputs_class, enc_outputs_coord_unact = self.transformer(srcs, masks, pos, query_embeds)
+        hs, init_reference, inter_references, enc_outputs_class, enc_outputs_coord_unact = self.transformer(src, mask, pos, query_embeds)
 
         outputs_classes = []
         outputs_coords = []
