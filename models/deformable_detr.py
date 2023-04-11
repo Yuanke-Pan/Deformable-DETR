@@ -132,10 +132,11 @@ class DeformableDETR(nn.Module):
         if not isinstance(samples, NestedTensor):
             samples = nested_tensor_from_tensor_list(samples)
         features, pos = self.backbone(samples) 
-        src = self.feature_summary(features)
-        mask = features[0].mask
-#        srcs = []
-#        masks = []
+        features = self.feature_summary(features) 
+        srcs = []
+        masks = []
+        srcs.append(features[0].tensors)
+        masks.append(features[0].mask)
 #        # features project
 #        for l, feat in enumerate(features):
 #            src, mask = feat.decompose()
@@ -160,7 +161,7 @@ class DeformableDETR(nn.Module):
         query_embeds = None
         if not self.two_stage:
             query_embeds = self.query_embed.weight
-        hs, init_reference, inter_references, enc_outputs_class, enc_outputs_coord_unact = self.transformer(src, mask, pos, query_embeds)
+        hs, init_reference, inter_references, enc_outputs_class, enc_outputs_coord_unact = self.transformer(srcs, masks, [pos[0]], query_embeds)
 
         outputs_classes = []
         outputs_coords = []

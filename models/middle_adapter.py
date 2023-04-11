@@ -10,8 +10,8 @@ class UpSampling(nn.Module):
         self.Up = nn.Conv2d(in_channels, in_channels // 2, 1, 1)
 
     def forward(self, x):
-        up = F.interpolate(x, scale_factor=2, mode="nearest")
-        x = self.Up(up)
+        x = F.interpolate(x, scale_factor=2, mode="nearest")
+        x = self.Up(x)
         return x
 
 class DownSampling(nn.Module):
@@ -41,20 +41,27 @@ class DoubleConv(nn.Module):
     
     def forward(self, x):
         x = self.double_conv(x)
+        return x
     
 class Up_Conv(nn.Module):
-    def __init__(self, in_channels) -> None:
+    def __init__(self, in_channels, have_pre: bool, need_up: bool) -> None:
         super().__init__()
-        self.UpSampling = UpSampling(in_channels)
-        self.DoubleConv = DoubleConv(in_channels)
+        self.need_up = need_up
+        if need_up:
+            self.UpSampling = UpSampling(in_channels)
+        if have_pre:
+            self.DoubleConv = DoubleConv(in_channels * 2)
     
     def forward(self, pre, x):
         if pre != None:
-            pre = self.UpSampling(pre)
+            pre = F.interpolate(pre, size=x.shape[-2:], mode="nearest")
             pre = torch.cat([pre, x], dim=1)
+            pre = self.DoubleConv(pre)
         else:
             pre = x
-        return self.DoubleConv(x)
+        if self.need_up:
+            pre = self.UpSampling(pre)
+        return pre
 
         
 class FeatureFusionBlock(nn.Module):
@@ -74,21 +81,28 @@ class FeatureFusionBlock(nn.Module):
             ))
             input_channels = 2 * input_channels
             num_channels.append(input_channels)
+        self.DownSampe = nn.Sequential(
+            nn.Conv2d(num_channels[0], num_channels[0] // 2, kernel_size=3, stride=1, padding=1),
+            nn.LeakyReLU()
+        )
         self.feature_addition_list = nn.ModuleList(self.feature_addition_list)
         for _ in range(len(num_channels)):
-            self.feature_fusion_list.append(Up_Conv(num_channels[_]))
+            self.feature_fusion_list.append(Up_Conv(num_channels[_], _ != (len(num_channels) - 1), _ != 0))
         self.feature_fusion_list = nn.ModuleList(self.feature_fusion_list)
+        
     
     def forward(self, features):
         t = features[-1].tensors
         for block in self.feature_addition_list:
             z = block(t)
-            features.append(NestedTensor(z))
+            features.append(NestedTensor(z, None))
             t = z
         t = None
-        for _ in range(-1, -len(features)-1, -1):
-            t = self.feature_fusion_list[_](features[_].tensor)
-        return NestedTensor(t, features[0].mask)
+        for i in range(-1, -len(features)-1, -1):
+            #print(features[i].tensors)
+            t = self.feature_fusion_list[i](t, features[i].tensors)
+        t = self.DownSampe(t)
+        return [NestedTensor(t, features[0].mask)]
 
         
         
