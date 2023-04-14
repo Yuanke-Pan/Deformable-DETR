@@ -79,7 +79,7 @@ class DeformableDETR(nn.Module):
 #                    nn.GroupNorm(32, hidden_dim),
 #                )])
 
-        self.feature_summary = FeatureFusionBlock(backbone, num_feature_levels)
+        self.feature_summary = FeatureFusionBlock(backbone, num_feature_levels, use_deform=True)
 #       modify at here
         self.backbone = backbone
         self.aux_loss = aux_loss
