@@ -79,7 +79,7 @@ class DeformableDETR(nn.Module):
 #                    nn.GroupNorm(32, hidden_dim),
 #                )])
 
-        self.feature_summary = FeatureFusionBlock(backbone, num_feature_levels)
+        self.feature_summary = FeatureFusionBlock(backbone, num_feature_levels + 1)
 #       modify at here
         self.backbone = backbone
         self.aux_loss = aux_loss
@@ -131,12 +131,19 @@ class DeformableDETR(nn.Module):
         """
         if not isinstance(samples, NestedTensor):
             samples = nested_tensor_from_tensor_list(samples)
-        features, pos = self.backbone(samples) 
-        features = self.feature_summary(features) 
+        features = self.backbone(samples) 
+        features = self.feature_summary(features)
+        
         srcs = []
         masks = []
-        srcs.append(features[0].tensors)
-        masks.append(features[0].mask)
+        pos = []
+        for src in reversed(features):
+            feat, mask = src.decompose()
+            srcs.append(feat)
+            masks.append(mask)
+            pos_l = self.backbone[1](NestedTensor(feat, mask)).to(feat.dtype)
+            pos.append(pos_l)
+
 #        # features project
 #        for l, feat in enumerate(features):
 #            src, mask = feat.decompose()
@@ -161,7 +168,7 @@ class DeformableDETR(nn.Module):
         query_embeds = None
         if not self.two_stage:
             query_embeds = self.query_embed.weight
-        hs, init_reference, inter_references, enc_outputs_class, enc_outputs_coord_unact = self.transformer(srcs, masks, [pos[0]], query_embeds)
+        hs, init_reference, inter_references, enc_outputs_class, enc_outputs_coord_unact = self.transformer(srcs, masks, pos, query_embeds)
 
         outputs_classes = []
         outputs_coords = []

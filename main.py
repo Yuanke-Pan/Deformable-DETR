@@ -61,7 +61,7 @@ def get_args_parser():
                         help="Type of positional embedding to use on top of the image features")
     parser.add_argument('--position_embedding_scale', default=2 * np.pi, type=float,
                         help="position / size * scale")
-    parser.add_argument('--num_feature_levels', default=4, type=int, help='number of feature levels')
+    parser.add_argument('--num_feature_levels', default=3, type=int, help='number of feature levels')
 
     # * Transformer
     parser.add_argument('--enc_layers', default=6, type=int,

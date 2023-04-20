@@ -42,9 +42,9 @@ class DeformableTransformer(nn.Module):
         decoder_layer = DeformableTransformerDecoderLayer(d_model, dim_feedforward,
                                                           dropout, activation,
                                                           num_feature_levels, nhead, dec_n_points)
-        self.decoder = DeformableTransformerDecoder(decoder_layer, num_decoder_layers, return_intermediate_dec)
+        self.decoder =  DeformableTransformerDecoder(decoder_layer, num_decoder_layers, return_intermediate_dec)
 
-        #self.level_embed = nn.Parameter(torch.Tensor(num_feature_levels, d_model))
+        self.level_embed = nn.Parameter(torch.Tensor(num_feature_levels, d_model))
 
         if two_stage:
             self.enc_output = nn.Linear(d_model, d_model)
@@ -63,7 +63,7 @@ class DeformableTransformer(nn.Module):
         if not self.two_stage:
             xavier_uniform_(self.reference_points.weight.data, gain=1.0)
             constant_(self.reference_points.bias.data, 0.)
-#        normal_(self.level_embed)
+        normal_(self.level_embed)
 
     def get_proposal_pos_embed(self, proposals):
         num_pos_feats = 128
@@ -136,7 +136,7 @@ class DeformableTransformer(nn.Module):
             src = src.flatten(2).transpose(1, 2)
             mask = mask.flatten(1)
             pos_embed = pos_embed.flatten(2).transpose(1, 2)
-            lvl_pos_embed = pos_embed #+ self.level_embed[lvl].view(1, 1, -1)
+            lvl_pos_embed = pos_embed + self.level_embed[lvl].view(1, 1, -1)
             lvl_pos_embed_flatten.append(lvl_pos_embed)
             src_flatten.append(src)
             mask_flatten.append(mask)
@@ -150,6 +150,7 @@ class DeformableTransformer(nn.Module):
         # encoder
         #memory = self.encoder(src_flatten, spatial_shapes, level_start_index, valid_ratios, lvl_pos_embed_flatten, mask_flatten)
         #print(src_flatten.shape, lvl_pos_embed_flatten.shape)
+
         memory = src_flatten + lvl_pos_embed_flatten
         # prepare input for decoder
         bs, _, c = memory.shape
@@ -250,7 +251,7 @@ class DeformableTransformerEncoder(nn.Module):
 
     def forward(self, src, spatial_shapes, level_start_index, valid_ratios, pos=None, padding_mask=None):
         output = src
-        reference_points = self.get_reference_points(spatial_shapes, valid_ratios, device=src.device)
+        reference_points = self.get_referenc2e_points(spatial_shapes, valid_ratios, device=src.device)
         for _, layer in enumerate(self.layers):
             output = layer(output, pos, reference_points, spatial_shapes, level_start_index, padding_mask)
 
@@ -384,7 +385,7 @@ def build_deforamble_transformer(args):
         dropout=args.dropout,
         activation="relu",
         return_intermediate_dec=True,
-        num_feature_levels=1,
+        num_feature_levels=args.num_feature_levels,
         dec_n_points=args.dec_n_points,
         enc_n_points=args.enc_n_points,
         two_stage=args.two_stage,

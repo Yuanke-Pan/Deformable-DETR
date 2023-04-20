@@ -123,10 +123,10 @@ class Joiner(nn.Sequential):
             out.append(x)
 
         # position encoding
-        for x in out:
-            pos.append(self[1](x).to(x.tensors.dtype))
+        #for x in out:
+        #   pos.append(self[1](x).to(x.tensors.dtype))
 
-        return out, pos
+        return out
 
 
 def build_backbone(args):
