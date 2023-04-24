@@ -15,15 +15,18 @@ import math
 import torch
 import torch.nn.functional as F
 from torch import nn, Tensor
-from torch.nn.init import xavier_uniform_, constant_, uniform_, normal_
-
-from .SMPConv import SMPCNN
+from torch.nn.init import xavier_uniform_, constant_, normal_
 
 from util.misc import inverse_sigmoid
 from models.ops.modules import MSDeformAttn
 
+from .SMPConv import SMPStage, SMPCNN
+from .SMPConv_decoder import SMPBlock
+from .common import Conv, SPPCSPC
 
-class DeformableTransformer(nn.Module):
+from torch.nn.init import xavier_uniform_, constant_, uniform_, normal_
+
+class SMPDe(nn.Module):
     def __init__(self, d_model=256, nhead=8,
                  num_encoder_layers=6, num_decoder_layers=6, dim_feedforward=1024, dropout=0.1,
                  activation="relu", return_intermediate_dec=False,
@@ -39,7 +42,7 @@ class DeformableTransformer(nn.Module):
         #encoder_layer = DeformableTransformerEncoderLayer(d_model, dim_feedforward,
         #                                                  dropout, activation,
         #                                                  num_feature_levels, nhead, enc_n_points)
-        #self.encoder = DeformableTransformerEncoder(encoder_layer, num_encoder_layers)
+        #self.encoder =  DeformableTransformerEncoder(encoder_layer, num_encoder_layers)
 
         decoder_layer = DeformableTransformerDecoderLayer(d_model, dim_feedforward,
                                                           dropout, activation,
@@ -187,6 +190,99 @@ class DeformableTransformer(nn.Module):
             return hs, init_reference_out, inter_references_out, enc_outputs_class, enc_outputs_coord_unact
         return hs, init_reference_out, inter_references_out, None, None
 
+class SMPEncoder(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.SPPCSPC = SPPCSPC(2048, 512)
+        self.upconv1 = Conv(512, 256)
+        self.smpconv1 = SMPCNN(512, 256, 5, 1, 1)
+        self.upconv2 = Conv(256, 128)
+        
+        self.featureconv0 = Conv(512, 128)
+        self.featureconv1 = Conv(1024, 256)
+
+        self.smpconv2 = SMPCNN(256, 128, 3, 1, 1)
+        
+    
+    def forward(self, in_features):
+        # in_features channels [512, 1024, 2048]
+        # output_fatures channels [512, 256, 128]
+        input_size = []
+        output = []
+        for feat in in_features:
+            input_size.append(feat.shape[-2:])
+        in_features[0], in_features[1] = self.featureconv0(in_features[0]), self.featureconv1(in_features[1])
+        #print(input_size)
+        x = in_features[2]
+        x = self.SPPCSPC(x)
+        output.append(x)
+
+        x = self.upconv1(x)
+        x = F.interpolate(x, size=input_size[1], mode="nearest")
+        x = torch.cat([x, in_features[1]], dim = 1)
+        x = self.smpconv1(x)
+        output.append(x)
+
+        x = self.upconv2(x)
+        x = F.interpolate(x, size=input_size[0], mode="nearest")
+        x = torch.cat([x, in_features[0]], dim = 1)
+        x = self.smpconv2(x)
+        output.append(x)
+        
+        return output
+
+class SMPDecoder(nn.Module):
+    def __init__(self):
+        self.SMPBlock1 = SMPBlock(128, 256, 40, 0, 100)
+        self.conv1 = Conv(256, 256, 1, 2)
+
+        self.SMPBlock2 = SMPBlock(512, 512, 20, 0, 100)
+        self.conv2 = Conv(512, 512, 1, 2)
+
+        self.SMPBlock3 = SMPBlock(1024, 512, 20, 0, 100)
+
+        self.query_embedding = nn.Parameter(torch.Tensor(1, 100, 256))
+    
+    def reset_parameter(self):
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+
+        normal_(self.query_embedding)
+
+    def forward(self, in_features):
+        result = []
+        x_dow, x_mid, x_up = in_features[2], in_features[1], in_features[0]
+
+        x = x_dow
+        x = self.SMPBlock1(x, self.query_embedding)
+        result.append(x)
+
+        x = self.conv1(x)
+        x = torch.cat([x, x_mid], dim = 1)
+
+        x = self.SMPBlock2(x, self.query_embedding)
+        result.append(x)
+
+        x = self.conv2(x)
+        x = torch.cat([x, x_up], dim = 1)
+        
+        x = self.SMPBlock3(x, self.query_embedding)
+        result.append(x)
+
+        return result
+        
+        
+
+
+
+
+
+        
+        
+        
+        
+        
 
 class DeformableTransformerEncoderLayer(nn.Module):
     def __init__(self,

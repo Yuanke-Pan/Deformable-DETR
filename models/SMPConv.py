@@ -23,7 +23,7 @@ class SMPConv(nn.Module):
         self.planes = planes
         self.kernel_size = kernel_size
         self.n_points = n_points
-        self.init_radius = 2 * (2/kernel_size)
+        self.init_radius = 2 * ( 2 / kernel_size)
 
         # kernel_coord
         kernel_coord = rel_pos(kernel_size)
@@ -46,82 +46,17 @@ class SMPConv(nn.Module):
         kernels = self.make_kernels().unsqueeze(1)
         x = x.contiguous()
         kernels = kernels.contiguous()
-
         if x.dtype == torch.float32:
             x = _DepthWiseConv2dImplicitGEMMFP32.apply(x, kernels)
         elif x.dtype == torch.float16:
             x = _DepthWiseConv2dImplicitGEMMFP16.apply(x, kernels)
         else:
             raise TypeError("Only support fp32 and fp16, get {}".format(x.dtype))
+        
         return x        
 
     def make_kernels(self):
         diff = self.weight_coord.unsqueeze(-2) - self.kernel_coord.reshape(1,2,-1).transpose(1,2)  # [1, n_points, kernel_size^2, 2]
-        diff = diff.transpose(2,3).reshape(1, self.n_points, 2, self.kernel_size, self.kernel_size)
-        diff = F.relu(1 - torch.sum(torch.abs(diff), dim=2) / self.radius)  # [1, n_points, kernel_size, kernel_size]
-        
-        # Apply weighted diff for average weighted kernel
-        non_zero = (diff != 0) # [1, n_points, kernel_size, kernel_size]
-        count_weight = 1 / (torch.sum(non_zero, dim=1, keepdim=True) + 1e-6)  # [1, 1, kernel_size, kernel_size]
-        weighted_diff = count_weight * diff  # [1, n_points, kernel_size, kernel_size]
-
-        kernels = torch.matmul(self.weights, diff.reshape(1, self.n_points, -1)) # [1, planes, kernel_size*kernel_size]
-        kernels = kernels.reshape(1, self.planes, *self.kernel_coord.shape[2:]) # [1, planes, kernel_size, kernel_size]
-        kernels = kernels.squeeze(0)
-        kernels = torch.flip(kernels.permute(0,2,1), dims=(1,))
-        return kernels
-    
-    def radius_clip(self, min_radius=1e-3, max_radius=1.):
-        r = self.radius.data
-        r = r.clamp(min_radius, max_radius)
-        self.radius.data = r
-
-class SMPConv_decoder(nn.Module):
-    def __init__(self, planes, kernel_size, n_points, d_query_embed, stride, padding, groups):
-        super().__init__()
-
-        self.planes = planes
-        self.kernel_size = kernel_size
-        self.n_points = n_points
-        self.init_radius = 2 * (2/kernel_size)
-
-        # kernel_coord
-        kernel_coord = rel_pos(kernel_size)
-        self.register_buffer('kernel_coord', kernel_coord)
-
-        # weight_coord
-#        weight_coord = torch.empty(1, n_points, 2)
-#        nn.init.trunc_normal_(weight_coord, std=0.2, a=-1., b=1.)
-#        self.weight_coord = nn.Parameter(weight_coord)
-        self.weight_coord = nn.Linear(d_query_embed, 2, bias=False)
-        
-
-        self.radius = nn.Parameter(torch.empty(1, n_points).unsqueeze(-1).unsqueeze(-1))
-        self.radius.data.fill_(value=self.init_radius)
-
-        # weight
-        weights = torch.empty(1, planes, n_points)
-        trunc_normal_(weights, std=.02)
-        self.weights = nn.Parameter(weights)
-
-    def forward(self, x, query_embed):
-
-        weight_coord = self.weight_coord(query_embed).tanh()
-
-        kernels = self.make_kernels(weight_coord).unsqueeze(1)
-        x = x.contiguous()
-        kernels = kernels.contiguous()
-
-        if x.dtype == torch.float32:
-            x = _DepthWiseConv2dImplicitGEMMFP32.apply(x, kernels)
-        elif x.dtype == torch.float16:
-            x = _DepthWiseConv2dImplicitGEMMFP16.apply(x, kernels)
-        else:
-            raise TypeError("Only support fp32 and fp16, get {}".format(x.dtype))
-        return x        
-
-    def make_kernels(self, weight_coord):
-        diff = weight_coord.unsqueeze(-2) - self.kernel_coord.reshape(1,2,-1).transpose(1,2)  # [1, n_points, kernel_size^2, 2]
         diff = diff.transpose(2,3).reshape(1, self.n_points, 2, self.kernel_size, self.kernel_size)
         diff = F.relu(1 - torch.sum(torch.abs(diff), dim=2) / self.radius)  # [1, n_points, kernel_size, kernel_size]
         

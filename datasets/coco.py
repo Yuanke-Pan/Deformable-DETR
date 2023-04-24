@@ -21,6 +21,7 @@ from pycocotools import mask as coco_mask
 from .torchvision_datasets import CocoDetection as TvCocoDetection
 from util.misc import get_local_rank, get_local_size
 import datasets.transforms as T
+from torchvision.transforms import Resize
 
 
 class CocoDetection(TvCocoDetection):
@@ -134,6 +135,7 @@ def make_coco_transforms(image_set):
     if image_set == 'train':
         return T.Compose([
             T.RandomHorizontalFlip(),
+            #T.Resize([640,640]),
             T.RandomSelect(
                 T.RandomResize(scales, max_size=1333),
                 T.Compose([
@@ -148,6 +150,7 @@ def make_coco_transforms(image_set):
     if image_set == 'val':
         return T.Compose([
             T.RandomResize([800], max_size=1333),
+            #T.Resize([640, 640]),
             normalize,
         ])
 

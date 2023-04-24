@@ -16,13 +16,13 @@ def rel_pos(kernel_size):
     return kernel_coord
 
 class SMPConv_decoder(nn.Module):
-    def __init__(self, planes, kernel_size, n_points, d_query_embed, stride, padding, groups):
+    def __init__(self, planes, kernel_size, n_points, d_query_embed):
         super().__init__()
 
         self.planes = planes
         self.kernel_size = kernel_size
         self.n_points = n_points
-        self.init_radius = 2 * (2/kernel_size)
+        self.init_radius = 2 * (2 / kernel_size)
 
         # kernel_coord
         kernel_coord = rel_pos(kernel_size)
@@ -43,8 +43,8 @@ class SMPConv_decoder(nn.Module):
         trunc_normal_(weights, std=.02)
         self.weights = nn.Parameter(weights)
 
-    def forward(self, x, query_embed):
-
+    def forward(self, inputs):
+        x, query_embed = inputs
         weight_coord = self.weight_coord(query_embed).tanh()
 
         kernels = self.make_kernels(weight_coord).unsqueeze(1)
@@ -83,7 +83,7 @@ class SMPConv_decoder(nn.Module):
 def get_conv2d(in_channels, out_channels, kernel_size, stride, padding, dilation, groups, bias, n_points=None):
     if n_points != None and in_channels == out_channels and out_channels == groups and stride == 1 and padding == kernel_size // 2 and dilation == 1:
         print("SMPConv")
-        return SMPConv_decoder(in_channels, kernel_size, n_points, stride, padding, groups)
+        return SMPConv_decoder(in_channels, kernel_size, n_points, 256)
     else:
         print("Original convolution")
         return nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size, stride=stride,
@@ -149,13 +149,17 @@ class SMPCNN(nn.Module):
         padding = kernel_size // 2
         self.smp = conv_bn(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size,
                                     stride=stride, padding=padding, dilation=1, groups=groups, n_points=n_points)
-        
         self.small_kernel = 5
         self.small_conv = conv_bn(in_channels=in_channels, out_channels=out_channels, kernel_size=self.small_kernel,
                                    stride=stride, padding=self.small_kernel//2, groups=groups)
 
-    def forward(self, inputs):
-        out = self.smp(inputs)
+        self.need_embed_query = (in_channels == out_channels)
+
+    def forward(self, inputs, query_embed = None):
+        if self.need_embed_query:
+            out = self.smp([inputs, query_embed])
+        else:
+            out = self.smp(inputs)
         out += self.small_conv(inputs)
         return out
 
@@ -190,13 +194,20 @@ class SMPBlock(nn.Module):
         self.prelkb_bn = get_bn(in_channels)
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
         print('drop path:', self.drop_path)
+        self.need_query = (in_channels == dw_channels)
 
-    def forward(self, x):
+    def forward(self, x, query_embed):
         out = self.prelkb_bn(x)
-        out = self.pw1(out)
-        out = self.large_kernel(out)
+        if self.need_query:
+            out = self.pw1(out, query_embed)
+        else:
+            out = self.pw1(out)
+        out = self.large_kernel(out, query_embed)
         out = self.lk_nonlinear(out)
-        out = self.pw2(out)
+        if self.need_query:
+            out = self.pw2(out, query_embed)
+        else:
+            out = self.pw2(out)
         return x + self.drop_path(out)
 
 
