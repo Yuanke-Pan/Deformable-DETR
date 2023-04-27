@@ -30,6 +30,7 @@ from .middle_adapter import FeatureFusionBlock
 from .SMPDe import SMPEncoder
 from .SMPConv import SMPCNN
 from .common import Conv
+from .yolo import YoloBody
 
 def _get_clones(module, N):
     return nn.ModuleList([copy.deepcopy(module) for i in range(N)])
@@ -82,11 +83,11 @@ class DeformableDETR(nn.Module):
 #                    nn.GroupNorm(32, hidden_dim),
 #                )])
 
-        self.feature_summary = SMPEncoder()
-        SMPconv0 = Conv(128, 256, 1)#SMPCNN(128, 256, 40, stride=1, groups=128, n_points=40)
-        SMPconv1 = Conv(256, 256, 1)#SMPCNN(256, 256, 20, stride=1, groups=128, n_points=40)
-        SMPconv2 = Conv(512, 256, 1)#SMPCNN(512, 256, 10, stride=1, groups=128, n_points=40)
-        self.SMPconvlist = torch.nn.ModuleList([SMPconv0, SMPconv1, SMPconv2])
+        self.feature_summary = YoloBody('l', output_channels=hidden_dim,pretrained=True)
+        #SMPconv0 = Conv(128, 256, 1)#SMPCNN(128, 256, 40, stride=1, groups=128, n_points=40)
+        #SMPconv1 = Conv(256, 256, 1)#SMPCNN(256, 256, 20, stride=1, groups=128, n_points=40)
+        #SMPconv2 = Conv(512, 256, 1)#SMPCNN(512, 256, 10, stride=1, groups=128, n_points=40)
+        #self.SMPconvlist = torch.nn.ModuleList([SMPconv0, SMPconv1, SMPconv2])
 #       modify at here
         self.backbone = backbone
         self.aux_loss = aux_loss
@@ -145,7 +146,7 @@ class DeformableDETR(nn.Module):
         pos = []
         for i, src in enumerate(reversed(features)):
             #print(src.shape)
-            srcs.append(self.SMPconvlist[i](src))
+            srcs.append(src)
             #mask = torch.zeros(src.shape[-2:]).bool().to(src.device)
             #masks.append(mask)
             pos_l = self.backbone[1](NestedTensor(src, masks[i])).to(src.dtype)

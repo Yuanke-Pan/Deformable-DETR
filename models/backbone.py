@@ -23,6 +23,8 @@ from util.misc import NestedTensor, is_main_process
 
 from .position_encoding import build_position_encoding
 
+from .yolo_backbone import YoLo_Backbone
+
 
 class FrozenBatchNorm2d(torch.nn.Module):
     """
@@ -80,16 +82,16 @@ class BackboneBase(nn.Module):
             return_layers = {'layer4': "0"}
             self.strides = [32]
             self.num_channels = [2048]
-        self.body = IntermediateLayerGetter(backbone, return_layers=return_layers)
+        self.body = backbone  #IntermediateLayerGetter(backbone, return_layers=return_layers)
 
     def forward(self, tensor_list: NestedTensor):
         xs = self.body(tensor_list.tensors)
-        out: Dict[str, NestedTensor] = {}
-        for name, x in xs.items():
+        out = []
+        for x in xs:
             m = tensor_list.mask
             assert m is not None
             mask = F.interpolate(m[None].float(), size=x.shape[-2:]).to(torch.bool)[0]
-            out[name] = NestedTensor(x, mask)
+            out.append(NestedTensor(x, mask))
         return out
 
 
@@ -100,9 +102,10 @@ class Backbone(BackboneBase):
                  return_interm_layers: bool,
                  dilation: bool):
         norm_layer = FrozenBatchNorm2d
-        backbone = getattr(torchvision.models, name)(
-            replace_stride_with_dilation=[False, False, dilation],
-            pretrained=is_main_process(), norm_layer=norm_layer)
+        #backbone = getattr(torchvision.models, name)(
+        #    replace_stride_with_dilation=[False, False, dilation],
+        #    pretrained=is_main_process(), norm_layer=norm_layer)
+        backbone = YoLo_Backbone(pretrained=True)
         assert name not in ('resnet18', 'resnet34'), "number of channels are hard coded"
         super().__init__(backbone, train_backbone, return_interm_layers)
         if dilation:
@@ -119,11 +122,11 @@ class Joiner(nn.Sequential):
         xs = self[0](tensor_list)
         out: List[NestedTensor] = []
         pos = []
-        for name, x in sorted(xs.items()):
+        for x in xs:
             out.append(x)
 
         # position encoding
-        #for x in out:
+        # for x in out:
         #   pos.append(self[1](x).to(x.tensors.dtype))
 
         return out
