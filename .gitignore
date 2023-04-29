@@ -4,3 +4,4 @@ build
 *.egg-info
 data
 exps
+yolov7_backbone_weights.pth

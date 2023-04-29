@@ -127,6 +127,7 @@ class YoLo_Backbone(nn.Module):
             print("Load weights from " + url.split('/')[-1])
 
     def forward(self, x):
+        #print(x.shape)
         x = self.stem(x)
         x = self.dark2(x)
         #-----------------------------------------------#

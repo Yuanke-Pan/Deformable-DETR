@@ -94,15 +94,22 @@ def resize(image, target, size, max_size=None):
                 size = int(round(max_size * min_original_size / max_original_size))
 
         if (w <= h and w == size) or (h <= w and h == size):
+            h = h + (32 - h % 32) % 32
+            w = w + (32 - w % 32) % 32
             return (h, w)
 
         if w < h:
             ow = size
             oh = int(size * h / w)
+            # make it divisabel to 32
+            
         else:
             oh = size
             ow = int(size * w / h)
-
+            # make it divisabel to 32
+            
+        oh = oh + (32 - oh % 32) % 32
+        ow = ow + (32 - ow % 32) % 32
         return (oh, ow)
 
     def get_size(image_size, size, max_size=None):
