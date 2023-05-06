@@ -213,7 +213,7 @@ def fuse_conv_and_bn(conv, bn):
 #   yolo_body
 #---------------------------------------------------#
 class YoloBody(nn.Module):
-    def __init__(self, phi, output_channels,pretrained=False):
+    def __init__(self, phi, output_channels, pretrained=False):
         super(YoloBody, self).__init__()
         #-----------------------------------------------#
         #   定义了不同yolov7版本的参数

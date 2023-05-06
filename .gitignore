@@ -5,3 +5,4 @@ build
 data
 exps
 yolov7_backbone_weights.pth
+yolov7_x_backbone_weights.pth

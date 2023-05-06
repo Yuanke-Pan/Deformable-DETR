@@ -79,9 +79,11 @@ class Transition_Block(nn.Module):
         
         # 80, 80, 128 cat 80, 80, 128 => 80, 80, 256
         return torch.cat([x_2, x_1], 1)
-    
+
+# 'l' transition_channels = 32 block_channels=32 n = 4
+# 'x' transition_channels = 40 block_channels=32 n = 6
 class YoLo_Backbone(nn.Module):
-    def __init__(self, transition_channels = 32, block_channels = 32, n = 4, phi = 'l', pretrained=False):
+    def __init__(self, transition_channels = 40, block_channels = 32, n = 6, phi = 'x', pretrained=False):
         super().__init__()
         #-----------------------------------------------#
         #   输入图片是640, 640, 3

@@ -40,7 +40,8 @@ class CocoDetection(TvCocoDetection):
             img, target = self._transforms(img, target)
         return img, target
 
-    def mixup(self, )
+    def mixup(self, image1, image2, target1, target2):
+        
 
 def convert_coco_poly_to_mask(segmentations, height, width):
     masks = []
